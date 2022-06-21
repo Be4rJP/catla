@@ -23,11 +23,11 @@ impl VirtualMachine {
 
 pub struct Environment {
 
-
+    pub stack: Vec<Option<Box<StackContent>>>,
 
 }
 
-pub enum Content {
+pub enum StackContent {
     Byte(i8),
     Short(i16),
     Int(i32),
