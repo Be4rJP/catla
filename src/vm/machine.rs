@@ -1,3 +1,4 @@
+use crate::UnsafeReference;
 use crate::vm::operator::Operation;
 
 pub struct VirtualMachine {
@@ -17,4 +18,21 @@ impl VirtualMachine {
 
     }
 
+}
+
+
+pub struct Environment {
+
+
+
+}
+
+pub enum Content {
+    Byte(i8),
+    Short(i16),
+    Int(i32),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    HeepReference()
 }

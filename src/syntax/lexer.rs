@@ -14,7 +14,8 @@ pub enum TokenType {
 #[derive(Clone)]
 pub struct TokenPosition {
     pub line: i32,
-    pub column: i32
+    pub column: i32,
+    pub token_length: i32
 }
 
 pub struct Token {

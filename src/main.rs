@@ -1,6 +1,6 @@
 extern crate core;
 
-use crate::vm::reference::Reference;
+use crate::vm::reference::UnsafeReference;
 
 mod syntax;
 mod vm;
@@ -8,7 +8,8 @@ mod vm;
 fn main() {
     println!("Hello, world!");
 
-    let mut reference = Reference::new(20);
+
+    let mut reference = UnsafeReference::new(20);
 
     unsafe {
         reference.hold();
@@ -24,3 +25,5 @@ fn main() {
         println!("0 : {}", *reference.get());
     }
 }
+
+

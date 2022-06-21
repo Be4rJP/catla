@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub struct Reference<T> {
+pub struct UnsafeReference<T> {
 
     reference: Option<*mut T>,
 
@@ -8,7 +8,7 @@ pub struct Reference<T> {
 
 }
 
-impl<T> Reference<T> {
+impl<T> UnsafeReference<T> {
 
     pub fn new(value: T) -> Self {
         let raw_pointer = Box::into_raw(Box::new(value));
