@@ -2,7 +2,7 @@ use crate::syntax::lexer::TokenPosition;
 
 //OpeCodes
 const NONE: u16 = 0x00;
-const NULL: u16 = 0x01;
+const PUSH_NULL: u16 = 0x01;
 const PUSH_CONST: u16 = 0x02;
 const B_ADD: u16 = 0x03;
 const S_ADD: u16 = 0x04;
@@ -28,6 +28,11 @@ const I_DIV: u16 = 0x17;
 const L_DIV: u16 = 0x18;
 const F_DIV: u16 = 0x19;
 const D_DIV: u16 = 0x1A;
+
+
+pub struct Operand {
+
+}
 
 
 
