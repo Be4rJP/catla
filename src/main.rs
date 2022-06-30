@@ -2,6 +2,7 @@ extern crate llvm_sys as llvm;
 #[macro_use] extern crate anyhow;
 
 use std::ffi::CString;
+use std::mem;
 use std::mem::MaybeUninit;
 
 use llvm::core::*;
@@ -11,120 +12,74 @@ use llvm::target_machine::*;
 use llvm::*;
 
 use anyhow::{Context, Result};
-
-unsafe fn gen_code(ctx: *mut LLVMContext, m: *mut LLVMModule, b: *mut LLVMBuilder) -> Result<()> {
-
-    let emp_str = CString::new("")?;
-    let mut param_ty = vec![LLVMPointerType(LLVMInt8TypeInContext(ctx), 0)];
-    let printf_ty = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_ty.as_mut_ptr(), 0, 1);
-    let name = CString::new("printf")?;
-    let printf_body = LLVMAddFunction(m, name.as_ptr(), printf_ty);
-
-    let mut param_ty = vec![];
-    let main_ty = LLVMFunctionType(LLVMInt64TypeInContext(ctx), param_ty.as_mut_ptr(), 0, 0);
-    let name = CString::new("main")?;
-    let main_body=  LLVMAddFunction(m, name.as_ptr(), main_ty);
-
-    let name = CString::new("entry")?;
-    let bb_entry = LLVMAppendBasicBlockInContext(ctx, main_body, name.as_ptr());
-    LLVMPositionBuilderAtEnd(b, bb_entry);
-
-    let s = CString::new("Hello, World!\n")?;
-    let mut arg = vec![LLVMBuildGlobalString(b, s.as_ptr(), emp_str.as_ptr())];
-    LLVMBuildCall(b, printf_body, arg.as_mut_ptr(), 1, emp_str.as_ptr());
-
-    LLVMBuildRet(b, LLVMConstInt(LLVMInt64TypeInContext(ctx), 0, 1));
-
-    let mut err = MaybeUninit::uninit().assume_init();
-    let is_err = LLVMVerifyModule(m, LLVMVerifierFailureAction::LLVMPrintMessageAction, &mut err);
-    if is_err != 0 {
-        let err = CString::from_raw(err);
-        let err_ = err.clone();
-        LLVMDisposeMessage(err.into_raw());
-        return Err(anyhow!("Failed to verify main module: {}", err_.to_str()?));
-    }
-    Ok(())
-
-}
-
-unsafe fn get_target_machine() -> Result<*mut LLVMOpaqueTargetMachine> {
-
-    LLVM_InitializeNativeTarget();
-    LLVM_InitializeNativeAsmPrinter();
-
-    let cpu = LLVMGetHostCPUName();
-    let feat = LLVMGetHostCPUFeatures();
-    let triple = LLVMGetDefaultTargetTriple();
-
-    let mut target = MaybeUninit::uninit().assume_init();
-    let mut err = MaybeUninit::uninit().assume_init();
-
-    let is_err = LLVMGetTargetFromTriple(triple, &mut target, &mut err);
-    if is_err != 0 {
-        let err = CString::from_raw(err);
-        let err_ = err.clone();
-        LLVMDisposeMessage(err.into_raw());
-        return Err(anyhow!("Failed to get target from triple: {}", err_.to_str()?));
-    }
-
-    let tm = LLVMCreateTargetMachine(
-        target,
-        triple,
-        cpu,
-        feat,
-        LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
-        LLVMRelocMode::LLVMRelocPIC,
-        LLVMCodeModel::LLVMCodeModelDefault
-    );
-    LLVMDisposeMessage(cpu);
-    LLVMDisposeMessage(feat);
-    LLVMDisposeMessage(triple);
-    Ok(tm)
-
-}
-
-fn compile(cc: String) -> Result<()> {
-    unsafe {
-        let ctx = LLVMContextCreate();
-        let mod_name = CString::new("test")?;
-        let m = LLVMModuleCreateWithNameInContext(mod_name.as_ptr(), ctx);
-        let b = LLVMCreateBuilderInContext(ctx);
-
-        gen_code(ctx, m, b).context("Error while generating body")?;
-
-        let tm = get_target_machine().context("Failed while getting target machine")?;
-
-        let mut err = MaybeUninit::uninit().assume_init();
-        let is_err = LLVMTargetMachineEmitToFile(tm, m, CString::new("test.o")?.into_raw(), LLVMCodeGenFileType::LLVMObjectFile, &mut err);
-        if is_err != 0 {
-            let err = CString::from_raw(err);
-            let err_ = err.clone();
-            LLVMDisposeMessage(err.into_raw());
-            return Err(anyhow!("Failed to emit object file: {}", err_.to_str()?));
-        }
-        LLVMDisposeTargetMachine(tm);
-        LLVMDisposeBuilder(b);
-        LLVMDisposeModule(m);
-        LLVMContextDispose(ctx);
-    }
-
-    let ext = if cfg!(windows) {".exe"} else {""};
-    let compiling = std::process::Command::new(cc)
-        .args(vec!["test.o".into(), "-o".into(), format!("test{}", ext)])
-        .output()?;
-
-    let stderr = String::from_utf8(compiling.stderr)?;
-    let status = compiling.status.code().ok_or(anyhow!("Apparently the compiler was killed"))?;
-    if status != 0 {
-        return Err(anyhow!("Compile failed with code {}\nstderr: {}", status, stderr));
-    }
-
-    Ok(())
-}
+use llvm::execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT};
 
 fn main() {
-    let cc = std::env::var("CC").unwrap_or("gcc".into());
-    compile(cc).context("Error while compiling").unwrap_or_else(|e|{
-        eprintln!("{:?}", e);
-    });
+    unsafe {
+        // Set up a context, module and builder in that context.
+        let context = LLVMContextCreate();
+        let module = LLVMModuleCreateWithNameInContext(b"sum\0".as_ptr() as *const _, context);
+        let builder = LLVMCreateBuilderInContext(context);
+
+        // get a type for sum function
+        let i64t = LLVMInt64TypeInContext(context);
+        let mut argts = [i64t, i64t, i64t];
+        let function_type = LLVMFunctionType(i64t, argts.as_mut_ptr(), argts.len() as u32, 0);
+
+        // add it to our module
+        let function = LLVMAddFunction(module, b"sum\0".as_ptr() as *const _, function_type);
+
+        // Create a basic block in the function and set our builder to generate
+        // code in it.
+        let bb = LLVMAppendBasicBlockInContext(context, function, b"entry\0".as_ptr() as *const _);
+
+        LLVMPositionBuilderAtEnd(builder, bb);
+
+        // get the function's arguments
+        let x = LLVMGetParam(function, 0);
+        let y = LLVMGetParam(function, 1);
+        let z = LLVMGetParam(function, 2);
+
+        let sum = LLVMBuildAdd(builder, x, y, b"sum.1\0".as_ptr() as *const _);
+        let sum = LLVMBuildAdd(builder, sum, z, b"sum.2\0".as_ptr() as *const _);
+
+        // Emit a `ret void` into the function
+        LLVMBuildRet(builder, sum);
+
+        // done building
+        LLVMDisposeBuilder(builder);
+
+        // Dump the module as IR to stdout.
+        LLVMDumpModule(module);
+
+        // build an execution engine
+        let mut ee = mem::uninitialized();
+        let mut out = mem::zeroed();
+
+        // robust code should check that these calls complete successfully
+        // each of these calls is necessary to setup an execution engine which compiles to native
+        // code
+        LLVMLinkInMCJIT();
+        LLVM_InitializeNativeTarget();
+        LLVM_InitializeNativeAsmPrinter();
+
+        // takes ownership of the module
+        LLVMCreateExecutionEngineForModule(&mut ee, module, &mut out);
+
+        let addr = LLVMGetFunctionAddress(ee, b"sum\0".as_ptr() as *const _);
+
+        let f: extern "C" fn(u64, u64, u64) -> u64 = mem::transmute(addr);
+
+        let x: u64 = 1;
+        let y: u64 = 1;
+        let z: u64 = 1;
+        let res = f(x, y, z);
+
+        println!("{} + {} + {} = {}", x, y, z, res);
+
+        // Clean up the rest.
+        LLVMDisposeExecutionEngine(ee);
+        LLVMContextDispose(context);
+    }
+
 }
