@@ -100,7 +100,7 @@ impl Lexer {
             }
 
             if !is_digit {
-                let word_cut = self.source_code.
+                //let word_cut = self.source_code.
 
                 //Check keywords
                 for keyword in KEYWORD_LIST.write().unwrap().iter() {
