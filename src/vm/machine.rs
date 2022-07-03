@@ -1,4 +1,4 @@
-use crate::UnsafeReference;
+use crate::vm::reference::UnsafeReference;
 use crate::vm::operator::Operation;
 
 pub struct VirtualMachine {

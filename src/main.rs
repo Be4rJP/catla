@@ -1,3 +1,6 @@
+mod vm;
+mod syntax;
+
 extern crate llvm_sys as llvm;
 #[macro_use] extern crate anyhow;
 
@@ -13,8 +16,10 @@ use llvm::*;
 
 use anyhow::{Context, Result};
 use llvm::execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT};
+use syntax::lexer;
 
 fn main() {
+    /*
     unsafe {
         // Set up a context, module and builder in that context.
         let context = LLVMContextCreate();
@@ -42,6 +47,7 @@ fn main() {
 
         let sum = LLVMBuildAdd(builder, x, y, b"sum.1\0".as_ptr() as *const _);
         let sum = LLVMBuildAdd(builder, sum, z, b"sum.2\0".as_ptr() as *const _);
+        let sum = LLVMBuildAdd(builder, sum, x, b"sum.3\0".as_ptr() as *const _);
 
         // Emit a `ret void` into the function
         LLVMBuildRet(builder, sum);
@@ -70,9 +76,9 @@ fn main() {
 
         let f: extern "C" fn(u64, u64, u64) -> u64 = mem::transmute(addr);
 
-        let x: u64 = 1;
-        let y: u64 = 1;
-        let z: u64 = 1;
+        let x: u64 = 20;
+        let y: u64 = 500;
+        let z: u64 = 1000;
         let res = f(x, y, z);
 
         println!("{} + {} + {} = {}", x, y, z, res);
@@ -80,6 +86,10 @@ fn main() {
         // Clean up the rest.
         LLVMDisposeExecutionEngine(ee);
         LLVMContextDispose(context);
-    }
+    }*/
+
+    let text = "ああああaaaaa";
+    let cut = lexer::cut_string(text, 3, 7);
+    println!("{}", &cut);
 
 }

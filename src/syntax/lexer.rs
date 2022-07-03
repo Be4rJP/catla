@@ -82,7 +82,7 @@ impl Lexer {
         let mut tokens: Vec<Token> = Vec::new();
 
         let mut current_index = 0;
-        let mut token_buffer = "".to_string();
+        let token_buffer = "".to_string();
         let mut scanning_type = ScanningTypeMayBe::NotNumber;
 
         while current_index < self.source_code.len() {
@@ -100,11 +100,13 @@ impl Lexer {
             }
 
             if !is_digit {
-                //let word_cut = self.source_code.
+                let word_cut = cut_string(&self.source_code, current_index, current_index + KEYWORD_MAX_LENGTH);
 
                 //Check keywords
                 for keyword in KEYWORD_LIST.write().unwrap().iter() {
+                    if word_cut.starts_with() {
 
+                    }
                 }
             }
 
@@ -114,4 +116,17 @@ impl Lexer {
         return tokens;
     }
 
+}
+
+
+pub fn cut_string(target: &str, start: usize, end: usize) -> String {
+    let mut buffer = String::new();
+    for i in target.chars().enumerate() {
+        match i.0 {
+            n if n < start => {continue}
+            n if n >= end => {break}
+            _ => {buffer.push(i.1)}
+        }
+    }
+    return buffer;
 }
