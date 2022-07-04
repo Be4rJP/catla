@@ -7,6 +7,8 @@ extern crate llvm_sys as llvm;
 use std::ffi::CString;
 use std::mem;
 use std::mem::MaybeUninit;
+use std::ops::Add;
+use std::sync::Arc;
 
 use llvm::core::*;
 use llvm::analysis::{LLVMVerifyModule, LLVMVerifierFailureAction};
@@ -17,8 +19,23 @@ use llvm::*;
 use anyhow::{Context, Result};
 use llvm::execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT};
 use syntax::lexer;
+use crate::lexer::Lexer;
+
+fn initialize() {
+    syntax::lexer::NONE_SPACE.clone();
+    syntax::lexer::NONE_STRING.clone();
+    syntax::lexer::EXPRESSION_SPLIT.clone();
+    syntax::lexer::OPERATOR_PLUS.clone();
+    syntax::lexer::OPERATOR_MINUS.clone();
+    syntax::lexer::OPERATOR_MULTIPLY.clone();
+    syntax::lexer::OPERATOR_DIVISION.clone();
+    syntax::lexer::OPERATOR_REMAINDER.clone();
+    syntax::lexer::OPERATOR_ASSIGNMENT.clone();
+    syntax::lexer::DOT.clone();
+}
 
 fn main() {
+    initialize();
     /*
     unsafe {
         // Set up a context, module and builder in that context.
@@ -88,8 +105,18 @@ fn main() {
         LLVMContextDispose(context);
     }*/
 
-    let text = "ああああaaaaa";
-    let cut = lexer::cut_string(text, 3, 7);
-    println!("{}", &cut);
+    let text = "var test = 200.0;var ああ=2000;200.00.0;";
+
+    let lexer = Lexer::new(text.to_string());
+    let tokens = lexer.scan();
+
+    let mut buffer = "".to_string();
+    for token in tokens {
+        buffer += token.word.as_str();
+        buffer += ", ";
+    }
+
+    println!("original : {}", &text);
+    println!("token : {}", buffer.as_str());
 
 }

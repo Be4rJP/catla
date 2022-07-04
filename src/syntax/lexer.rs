@@ -1,7 +1,10 @@
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use std::ops::Add;
 use std::sync::{Arc, RwLock};
+use regex::Regex;
 
 pub enum TokenType {
     Int,
@@ -20,24 +23,49 @@ pub enum TokenType {
 pub struct TokenPosition {
     pub line: u32,
     pub column: u32,
-    pub token_length: u16
+    pub token_length: u16,
+    pub serial_position: u32,
+}
+
+impl TokenPosition {
+    pub fn new(serial_position: u32) -> Self {
+        Self {
+            line: 0,
+            column: 0,
+            token_length: 0,
+            serial_position
+        }
+    }
 }
 
 pub struct Token {
-    pub lexer: Option<Arc<Lexer>>,
-
-    pub start_position: TokenPosition,
-    pub end_position: TokenPosition,
-
-    pub word: String
+    pub lexer: Arc<Lexer>,
+    pub position: TokenPosition,
+    pub word: String,
+    pub key_word: Option<&'static KeyWord>,
+    pub scanned_type: ScannedTypeMayBe
 }
+
+impl Token {
+    pub fn new(lexer: Arc<Lexer>, current_position: u32, word: String,
+               key_word: Option<&'static KeyWord>) -> Self {
+
+        let position = TokenPosition::new(current_position);
+        Self {
+            lexer,
+            position,
+            word,
+            key_word,
+            scanned_type: ScannedTypeMayBe::NotNumber
+        }
+    }
+}
+
+
 
 pub struct Lexer {
-
     pub source_code: String
-
 }
-
 
 
 pub struct KeyWord {
@@ -46,25 +74,68 @@ pub struct KeyWord {
 
 impl KeyWord {
     fn new(words: Vec<&'static str>) -> Arc<Self> {
+        let mut word_max_length = 0;
+        for word in (&words).iter() {
+            let length = word.chars().count();
+            if length > word_max_length {
+                word_max_length = length;
+            }
+        }
+
         let instance = Arc::new(Self {
             words: Box::new(words)
         });
-
-        &KEYWORD_LIST.write().unwrap().push(instance.clone());
+        unsafe {
+            KEYWORD_LIST.add(instance.clone());
+            KEYWORD_MAX_LENGTH = word_max_length;
+        }
 
         return instance;
     }
 }
 
 
-static KEYWORD_LIST: Lazy<RwLock<Vec<Arc<KeyWord>>>> = Lazy::new(|| {RwLock::new(Vec::new())});
-static KEYWORD_MAX_LENGTH: usize = 5;
+static mut KEYWORD_LIST: Lazy<KeyWordRegistry> = Lazy::new(|| {KeyWordRegistry::new()});
+static mut KEYWORD_MAX_LENGTH: usize = 0;
 
-static EXPRESSION_SPLIT: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["\n", ";"])});
-static OPERATOR_PLUS: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["+"])});
-static OPERATOR_ASSIGNMENT: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["="])});
+pub struct KeyWordRegistry {
+    keyword_list: Vec<Arc<KeyWord>>
+}
 
-pub enum ScanningTypeMayBe {
+impl KeyWordRegistry {
+
+    pub fn new() -> Self {
+        Self {
+            keyword_list: Vec::new()
+        }
+    }
+
+    pub fn get_list(&'static self) -> &'static Vec<Arc<KeyWord>> {
+        return &self.keyword_list
+    }
+
+    pub fn add(&mut self, keyword: Arc<KeyWord>) {
+        self.keyword_list.push(keyword);
+    }
+
+}
+
+
+pub static NONE_SPACE: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec![" "])});
+pub static NONE_STRING: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["\""])});
+
+pub static EXPRESSION_SPLIT: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["\n", ";"])});
+pub static VARIABLE: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["var"])});
+pub static OPERATOR_PLUS: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["+"])});
+pub static OPERATOR_MINUS: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["-"])});
+pub static OPERATOR_MULTIPLY: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["*"])});
+pub static OPERATOR_DIVISION: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["/"])});
+pub static OPERATOR_REMAINDER: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["%"])});
+pub static OPERATOR_ASSIGNMENT: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["="])});
+pub static DOT: Lazy<Arc<KeyWord>> = Lazy::new(|| {KeyWord::new(vec!["."])});
+
+#[derive(PartialEq)]
+pub enum ScannedTypeMayBe {
     Integer,
     Float,
     NotNumber
@@ -72,42 +143,82 @@ pub enum ScanningTypeMayBe {
 
 impl Lexer {
 
-    pub fn new(source_code: String) -> Self {
-        Self {
+    pub fn new(source_code: String) -> Arc<Lexer> {
+        let instance = Self {
             source_code
-        }
+        };
+
+        return Arc::new(instance);
     }
 
-    pub fn scan(&self) -> Vec<Token> {
-        let mut tokens: Vec<Token> = Vec::new();
+    pub fn scan(self: Arc<Self>) -> Vec<Arc<Token>> {
+        let mut tokens: Vec<Arc<Token>> = Vec::new();
 
         let mut current_index = 0;
-        let token_buffer = "".to_string();
-        let mut scanning_type = ScanningTypeMayBe::NotNumber;
+        let mut token_buffer = "".to_string();
 
-        while current_index < self.source_code.len() {
+        let source_code_length = self.source_code.chars().count();
+
+        'scan : while current_index < source_code_length {
             //Get character at current index.
             let character = self.source_code.chars().nth(current_index).unwrap();
 
-            let is_digit = char::is_ascii_digit(&character);
+            //Check keywords
+            let word_cut = cut_string(&self.source_code, current_index,
+                                      current_index + unsafe { KEYWORD_MAX_LENGTH });
+            let keyword_list = unsafe {KEYWORD_LIST.get_list()};
 
-            if token_buffer.len() == 0 {
-                if is_digit {
-                    scanning_type = ScanningTypeMayBe::Integer;
-                } else {
-                    scanning_type = ScanningTypeMayBe::NotNumber;
+            let mut push_character_to_buffer = true;
+
+            for keyword in keyword_list.iter() {
+                for word in keyword.words.iter() {
+
+                    if word_cut.starts_with(word) {
+                        //Create token and skip scan.
+
+                        let mut match_keyword = true;
+
+                        //Create token by buffer.
+                        if token_buffer.len() != 0 {
+                            let scanned_type = get_token_type_maybe(token_buffer.as_str());
+
+                            if word.eq(&".") && scanned_type == ScannedTypeMayBe::Integer {
+                                //Skip float number token.
+                                match_keyword = false;
+                            } else {
+                                //If not float token.
+                                let index = (current_index - token_buffer.len()) as u32;
+                                let mut token = Token::new(self.clone(), index,
+                                                           token_buffer.clone(), Option::None);
+                                token.scanned_type = get_token_type_maybe(token_buffer.as_str());
+
+                                tokens.push(Arc::new(token));
+                                token_buffer.clear();
+                            }
+                        }
+
+                        if match_keyword {
+                            match word {
+                                &" " => {
+                                    //Skip
+                                    push_character_to_buffer = false;
+                                }
+                                _ => {
+                                    //Create token by keyword.
+                                    let token = Token::new(self.clone(), current_index as u32,
+                                                           word.to_string(), Option::Some(keyword));
+                                    tokens.push(Arc::new(token));
+                                    current_index += word.len();
+                                    continue 'scan;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            if !is_digit {
-                let word_cut = cut_string(&self.source_code, current_index, current_index + KEYWORD_MAX_LENGTH);
-
-                //Check keywords
-                for keyword in KEYWORD_LIST.write().unwrap().iter() {
-                    if word_cut.starts_with() {
-
-                    }
-                }
+            if push_character_to_buffer {
+                token_buffer.push(character);
             }
 
             current_index += 1;
@@ -118,6 +229,16 @@ impl Lexer {
 
 }
 
+static REG_NORMAL_INT: Lazy<Regex> = Lazy::new(|| {Regex::new(r"^[0-9]+$").unwrap()});
+static REG_NORMAL_FLOAT: Lazy<Regex> = Lazy::new(|| {Regex::new(r"^[0-9]+\.[0-9]+$").unwrap()});
+
+pub fn get_token_type_maybe(name: &str) -> ScannedTypeMayBe {
+    match name {
+        n if REG_NORMAL_INT.is_match(n) => ScannedTypeMayBe::Integer,
+        n if REG_NORMAL_FLOAT.is_match(n) => ScannedTypeMayBe::Float,
+        _ => ScannedTypeMayBe::NotNumber
+    }
+}
 
 pub fn cut_string(target: &str, start: usize, end: usize) -> String {
     let mut buffer = String::new();
