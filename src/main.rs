@@ -25,6 +25,7 @@ fn initialize() {
     syntax::lexer::NONE_SPACE.clone();
     syntax::lexer::NONE_STRING.clone();
     syntax::lexer::EXPRESSION_SPLIT.clone();
+    syntax::lexer::VARIABLE.clone();
     syntax::lexer::OPERATOR_PLUS.clone();
     syntax::lexer::OPERATOR_MINUS.clone();
     syntax::lexer::OPERATOR_MULTIPLY.clone();
@@ -112,7 +113,7 @@ fn main() {
 
     let mut buffer = "".to_string();
     for token in tokens {
-        buffer += token.word.as_str();
+        buffer += token.to_string().as_str();
         buffer += ", ";
     }
 

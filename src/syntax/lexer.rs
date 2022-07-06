@@ -49,7 +49,6 @@ pub struct Token {
 impl Token {
     pub fn new(lexer: Arc<Lexer>, current_position: u32, word: String,
                key_word: Option<&'static KeyWord>) -> Self {
-
         let position = TokenPosition::new(current_position);
         Self {
             lexer,
@@ -57,6 +56,14 @@ impl Token {
             word,
             key_word,
             scanned_type: ScannedTypeMayBe::NotNumber
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        return if self.key_word.is_some() {
+            "[".to_owned() + self.word.as_str() + "]"
+        } else {
+            self.word.clone()
         }
     }
 }
@@ -86,8 +93,11 @@ impl KeyWord {
             words: Box::new(words)
         });
         unsafe {
-            KEYWORD_LIST.add(instance.clone());
-            KEYWORD_MAX_LENGTH = word_max_length;
+            KEYWORD_REGISTRY.add(instance.clone());
+
+            if word_max_length > KEYWORD_MAX_LENGTH {
+                KEYWORD_MAX_LENGTH = word_max_length;
+            }
         }
 
         return instance;
@@ -95,7 +105,7 @@ impl KeyWord {
 }
 
 
-static mut KEYWORD_LIST: Lazy<KeyWordRegistry> = Lazy::new(|| {KeyWordRegistry::new()});
+static mut KEYWORD_REGISTRY: Lazy<KeyWordRegistry> = Lazy::new(|| {KeyWordRegistry::new()});
 static mut KEYWORD_MAX_LENGTH: usize = 0;
 
 pub struct KeyWordRegistry {
@@ -103,7 +113,6 @@ pub struct KeyWordRegistry {
 }
 
 impl KeyWordRegistry {
-
     pub fn new() -> Self {
         Self {
             keyword_list: Vec::new()
@@ -117,7 +126,6 @@ impl KeyWordRegistry {
     pub fn add(&mut self, keyword: Arc<KeyWord>) {
         self.keyword_list.push(keyword);
     }
-
 }
 
 
@@ -163,12 +171,13 @@ impl Lexer {
             //Get character at current index.
             let character = self.source_code.chars().nth(current_index).unwrap();
 
-            //Check keywords
+            //Cut the string short in advance to avoid unnecessary comparisons with keywords.
             let word_cut = cut_string(&self.source_code, current_index,
                                       current_index + unsafe { KEYWORD_MAX_LENGTH });
-            let keyword_list = unsafe {KEYWORD_LIST.get_list()};
+            //Get keyword list.
+            let keyword_list = unsafe { KEYWORD_REGISTRY.get_list()};
 
-            let mut push_character_to_buffer = true;
+            let mut character_buffer = true;
 
             for keyword in keyword_list.iter() {
                 for word in keyword.words.iter() {
@@ -177,6 +186,21 @@ impl Lexer {
                         //Create token and skip scan.
 
                         let mut match_keyword = true;
+
+                        //Check has next.
+                        if current_index + 1 != source_code_length {
+                            //If there is a character other than a symbol to the right of
+                            //the detected keyword, it is ignored.
+                            let word_length = word.chars().count();
+                            let word_last_char: char = word.chars().nth(word_length - 1).unwrap();
+
+                            let next_char: char = self.source_code.chars().nth(current_index + word_length).unwrap();
+
+                            if next_char.is_alphanumeric() && word_last_char.is_alphanumeric() {
+                                //Ignore detected keywords.
+                                match_keyword = false;
+                            }
+                        }
 
                         //Create token by buffer.
                         if token_buffer.len() != 0 {
@@ -201,7 +225,7 @@ impl Lexer {
                             match word {
                                 &" " => {
                                     //Skip
-                                    push_character_to_buffer = false;
+                                    character_buffer = false;
                                 }
                                 _ => {
                                     //Create token by keyword.
@@ -217,7 +241,7 @@ impl Lexer {
                 }
             }
 
-            if push_character_to_buffer {
+            if character_buffer {
                 token_buffer.push(character);
             }
 
