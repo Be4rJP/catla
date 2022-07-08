@@ -65,7 +65,9 @@ fn main() {
 
         let sum = LLVMBuildAdd(builder, x, y, b"sum.1\0".as_ptr() as *const _);
         let sum = LLVMBuildAdd(builder, sum, z, b"sum.2\0".as_ptr() as *const _);
-        let sum = LLVMBuildAdd(builder, sum, x, b"sum.3\0".as_ptr() as *const _);
+        let type_i32 = LLVMInt32Type();
+        let cons = LLVMConstInt(type_i32, 40, 1);
+        let sum = LLVMBuildAdd(builder, sum, cons, b"sum.4\0".as_ptr() as *const _);
 
         // Emit a `ret void` into the function
         LLVMBuildRet(builder, sum);
